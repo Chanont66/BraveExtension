@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gmail Account Switcher</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+  <div class="app">
+
+    <header class="bar">
+      <div class="bar-id">
+        <span class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="#EA4335" d="M20 18h-2V9.25L12 13.5 6 9.25V18H4V6h1.75l6.25 4.5L18.25 6H20v12z" />
+          </svg>
+        </span>
+        <h1 class="bar-title">Gmail Switcher</h1>
+      </div>
+      <div class="bar-actions">
+        <span id="account-count-badge" class="count-tag">0</span>
+        <button id="refresh-btn" class="icon-btn" title="รีเฟรชรูปโปรไฟล์" aria-label="รีเฟรชรูปโปรไฟล์">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="search-row">
+      <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input id="search-input" class="search-input" type="text" placeholder="ค้นหาชื่อหรืออีเมล..." autocomplete="off"
+        aria-label="ค้นหาบัญชี">
+    </div>
+
+    <main id="accounts-list" class="list" role="listbox" aria-label="รายชื่อบัญชี Gmail">
+      <!-- Rows rendered via popup.js -->
+    </main>
+
+    <div id="empty-state" class="empty hidden" aria-live="polite">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+        aria-hidden="true">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+        <circle cx="12" cy="7" r="4"></circle>
+      </svg>
+      <p class="empty-title">ไม่พบบัญชีที่ตั้งค่าไว้</p>
+      <p class="empty-sub">โปรดแก้ไขไฟล์ accounts.js เพื่อเพิ่มบัญชี</p>
+    </div>
+
+    <div id="no-results" class="empty hidden" aria-live="polite">
+      <p class="empty-title">ไม่พบผลลัพธ์</p>
+      <p class="empty-sub">ลองค้นหาด้วยคำอื่น</p>
+    </div>
+
+    <footer class="footer">
+      <button id="add-account-btn" class="add-row" type="button" aria-label="เพิ่มบัญชีอื่น">
+        <span class="add-plus" aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24">
+            <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+          </svg>
+        </span>
+        เพิ่มบัญชีอื่น (Add Session)
+      </button>
+    </footer>
+
+  </div>
+
+  <script src="accounts.js"></script>
+  <script src="popup.js"></script>
+</body>
+
+</html>

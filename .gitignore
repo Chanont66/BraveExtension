@@ -1,0 +1,9 @@
+# Ignore accounts configuration containing personal email details
+accounts.js
+
+# OS & Editor generated files
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
