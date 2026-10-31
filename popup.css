@@ -1,8 +1,6 @@
 /* Gmail Account Switcher — Directory List Theme
    Design concept: a dense, numbered session directory rather than a card stack.
    Sans for human content (names/emails), monospace for system data (index, tags). */
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
-
 :root {
   --bg: #1c1c1d;
   --surface: #262836;
@@ -21,8 +19,8 @@
   --online: #4ade80;
   --offline: #f87171;
 
-  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Thai", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
 * {

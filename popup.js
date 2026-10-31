@@ -7,7 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const countBadge = document.getElementById("account-count-badge");
   const searchInput = document.getElementById("search-input");
 
-  const LOAD_TIMEOUT_MS = 5000;
+  const LOAD_TIMEOUT_MS = 2500;
   const PHOTO_SEARCH_WINDOW = 800; // chars scanned around an email match (fallback when no neighboring email boundary is found)
 
   const USER_ICON_SVG = `
@@ -16,67 +16,89 @@ document.addEventListener("DOMContentLoaded", () => {
     </svg>
   `;
 
-  // ---------- Storage helpers ----------
+  // ---------- In-memory & Storage caches ----------
+  let memoryAvatarCache = null;
+  let memoryHiddenAccounts = null;
+
+  function getLocalHiddenAccountsSync() {
+    try {
+      const item = localStorage.getItem("gmail_hidden_accounts");
+      return item ? JSON.parse(item) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function getLocalAvatarCacheSync() {
+    try {
+      const item = localStorage.getItem("gmail_avatars_cache");
+      return item ? JSON.parse(item) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
   async function getHiddenAccounts() {
+    if (memoryHiddenAccounts !== null) return memoryHiddenAccounts;
     return new Promise((resolve) => {
       if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
         chrome.storage.local.get(["gmail_hidden_accounts"], (res) => {
-          resolve(res ? res.gmail_hidden_accounts || [] : []);
+          memoryHiddenAccounts = res ? res.gmail_hidden_accounts || [] : [];
+          resolve(memoryHiddenAccounts);
         });
       } else {
-        try {
-          const item = localStorage.getItem("gmail_hidden_accounts");
-          resolve(item ? JSON.parse(item) : []);
-        } catch (e) {
-          resolve([]);
-        }
+        memoryHiddenAccounts = getLocalHiddenAccountsSync();
+        resolve(memoryHiddenAccounts);
       }
     });
   }
 
   async function saveHiddenAccounts(hiddenList) {
+    memoryHiddenAccounts = hiddenList;
+    try {
+      localStorage.setItem("gmail_hidden_accounts", JSON.stringify(hiddenList));
+    } catch (e) {}
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
       chrome.storage.local.set({ gmail_hidden_accounts: hiddenList });
-    } else {
-      try {
-        localStorage.setItem("gmail_hidden_accounts", JSON.stringify(hiddenList));
-      } catch (e) {}
     }
   }
 
   async function getStoredAvatars() {
+    if (memoryAvatarCache !== null) return memoryAvatarCache;
     return new Promise((resolve) => {
       if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
         chrome.storage.local.get(["gmail_avatars_cache"], (res) => {
-          resolve(res ? res.gmail_avatars_cache || {} : {});
+          memoryAvatarCache = res ? res.gmail_avatars_cache || {} : {};
+          resolve(memoryAvatarCache);
         });
       } else {
-        try {
-          const item = localStorage.getItem("gmail_avatars_cache");
-          resolve(item ? JSON.parse(item) : {});
-        } catch (e) {
-          resolve({});
-        }
+        memoryAvatarCache = getLocalAvatarCacheSync();
+        resolve(memoryAvatarCache);
       }
     });
   }
 
   async function saveStoredAvatars(cacheObj) {
+    memoryAvatarCache = cacheObj;
+    try {
+      localStorage.setItem("gmail_avatars_cache", JSON.stringify(cacheObj));
+    } catch (e) {}
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
       chrome.storage.local.set({ gmail_avatars_cache: cacheObj });
-    } else {
-      try {
-        localStorage.setItem("gmail_avatars_cache", JSON.stringify(cacheObj));
-      } catch (e) {}
     }
   }
 
   // ---------- Rendering ----------
-  async function renderAccounts() {
+  async function renderAccounts(forceRefresh = false) {
     if (!accountsContainer) return;
 
     const rawAccounts = Array.isArray(window.GMAIL_ACCOUNTS) ? window.GMAIL_ACCOUNTS : [];
-    const hiddenAccounts = await getHiddenAccounts();
+    
+    // Check synchronous storage first for zero-latency initial paint
+    const hiddenAccounts = memoryHiddenAccounts !== null 
+      ? memoryHiddenAccounts 
+      : getLocalHiddenAccountsSync();
+      
     const accounts = rawAccounts.filter(a => !hiddenAccounts.includes((a.email || "").toLowerCase()));
     const allEmails = accounts.map((a) => a.email).filter(Boolean);
 
@@ -89,8 +111,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (emptyState) emptyState.classList.add("hidden");
 
-    // Instant render using cache first to eliminate popup delay
-    const avatarCache = await getStoredAvatars();
+    // Instant render using cache synchronously first
+    const avatarCache = memoryAvatarCache !== null 
+      ? memoryAvatarCache 
+      : getLocalAvatarCacheSync();
+
     const fragment = document.createDocumentFragment();
     const rowElements = [];
 
@@ -187,7 +212,6 @@ document.addEventListener("DOMContentLoaded", () => {
       row.appendChild(actionsDiv);
 
       row.addEventListener("click", (e) => {
-        // Allow default link behavior for middle-click (button === 1), ctrl/cmd + click, or right click
         if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
           e.preventDefault();
           const isUnlogged = row.classList.contains("is-unlogged");
@@ -196,7 +220,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       fragment.appendChild(row);
-      rowElements.push({ row, acc });
+      rowElements.push({ row, acc, cachedAvatar });
     });
 
     // Single DOM update operation (batch injection)
@@ -204,19 +228,42 @@ document.addEventListener("DOMContentLoaded", () => {
     accountsContainer.appendChild(fragment);
     applyFilter();
 
-    // Asynchronously fetch Google SignOutOptions page in background without blocking initial render
-    fetchSignOutOptionsHtml().then((signOutHtml) => {
-      rowElements.forEach(({ row, acc }) => {
-        processAccountAvatar(row, acc, avatarCache, signOutHtml, allEmails);
+    // Re-sync storage in background if not already in memory
+    if (memoryHiddenAccounts === null || memoryAvatarCache === null) {
+      Promise.all([getHiddenAccounts(), getStoredAvatars()]).then(([storedHidden, storedAvatars]) => {
+        // If hidden list changed from background, re-filter
+        if (storedHidden.length !== hiddenAccounts.length) {
+          renderAccounts();
+        }
       });
-    });
+    }
+
+    // Determine if we need to fetch Google SignOutOptions:
+    // Only fetch if forceRefresh is true OR there are accounts without any cached avatar
+    const needsFetch = forceRefresh || rowElements.some(item => !item.cachedAvatar);
+
+    if (needsFetch) {
+      fetchSignOutOptionsHtml().then((signOutHtml) => {
+        rowElements.forEach(({ row, acc }) => {
+          processAccountAvatar(row, acc, avatarCache, signOutHtml, allEmails, forceRefresh);
+        });
+      });
+    }
   }
 
-  async function processAccountAvatar(row, acc, avatarCache, signOutHtml, allEmails) {
+  async function processAccountAvatar(row, acc, avatarCache, signOutHtml, allEmails, forceRefresh = false) {
     const avatarWrap = row.querySelector(".avatar-wrap");
     const statusDot = row.querySelector(".status-dot");
     const name = acc.name || "Unnamed Account";
     const email = acc.email || "";
+    const lowerEmail = email.toLowerCase();
+
+    // If already has avatar and not forced refresh, no need to re-verify
+    if (!forceRefresh && avatarCache[lowerEmail] && row.querySelector(".avatar-img")) {
+      statusDot.className = "status-dot online";
+      row.classList.remove("is-unlogged");
+      return;
+    }
 
     let isResolved = false;
 
@@ -231,21 +278,19 @@ document.addEventListener("DOMContentLoaded", () => {
       // 1. Manual override
       let targetUrl = acc.avatarUrl;
 
-      // 2. Try extracting this account's photo from the (already-fetched) page
+      // 2. Try extracting this account's photo from the page
       if (!targetUrl && signOutHtml) {
         targetUrl = extractPhotoForEmail(signOutHtml, email, allEmails);
       }
 
       // 3. Fallback to cache ONLY if fetch succeeded or manual override exists
-      if (!targetUrl && avatarCache[email]) {
-        // If fetch returns null (not logged in), purge old stale cache for this email
-        delete avatarCache[email];
+      if (!targetUrl && avatarCache[lowerEmail]) {
+        delete avatarCache[lowerEmail];
         saveStoredAvatars(avatarCache);
       }
 
       if (targetUrl) {
-        // If avatar matches cached avatar already in DOM, skip re-testing image to save network/CPU
-        if (avatarCache[email] === targetUrl && row.querySelector(".avatar-img")) {
+        if (avatarCache[lowerEmail] === targetUrl && row.querySelector(".avatar-img")) {
           clearTimeout(timeoutTimer);
           isResolved = true;
           statusDot.className = "status-dot online";
@@ -253,12 +298,12 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
-        const imgLoaded = await testLoadImage(targetUrl, 2000);
+        const imgLoaded = await testLoadImage(targetUrl, 1500);
         if (imgLoaded && !isResolved) {
           clearTimeout(timeoutTimer);
           isResolved = true;
 
-          avatarCache[email] = targetUrl;
+          avatarCache[lowerEmail] = targetUrl;
           saveStoredAvatars(avatarCache);
 
           avatarWrap.innerHTML = `
@@ -278,7 +323,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!isResolved) {
       clearTimeout(timeoutTimer);
       isResolved = true;
-      delete avatarCache[email];
+      delete avatarCache[lowerEmail];
       saveStoredAvatars(avatarCache);
       setUnloggedState(row, avatarWrap, statusDot);
     }
@@ -434,27 +479,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  function openGmailTab(email, isUnlogged) {
-    let targetUrl;
-    if (isUnlogged) {
-      // Direct user to Google sign in prompt with email parameter
-      if (email) {
-        targetUrl = `https://accounts.google.com/AccountChooser?Email=${encodeURIComponent(email)}&continue=${encodeURIComponent("https://mail.google.com/mail/")}`;
-      } else {
-        targetUrl = "https://accounts.google.com/AddSession";
-      }
-    } else {
-      // Use Google's authuser parameter to automatically route to the correct session index
-      targetUrl = `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(email)}`;
-    }
-
-    if (typeof chrome !== "undefined" && chrome.tabs && chrome.tabs.create) {
-      chrome.tabs.create({ url: targetUrl });
-    } else {
-      window.open(targetUrl, "_blank");
-    }
-  }
-
   function openAddAccountTab() {
     const addAccountUrl = "https://accounts.google.com/AddSession";
     if (typeof chrome !== "undefined" && chrome.tabs && chrome.tabs.create) {
@@ -507,7 +531,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (refreshBtn) {
     refreshBtn.addEventListener("click", () => {
       saveStoredAvatars({});
-      renderAccounts();
+      renderAccounts(true);
     });
   }
 
